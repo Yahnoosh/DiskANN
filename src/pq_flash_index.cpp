@@ -536,7 +536,7 @@ namespace diskann {
                             const char *index_prefix) {
 #else
   template<typename T>
-  int PQFlashIndex<T>::load(uint32_t num_threads, const char *index_prefix) {
+  int PQFlashIndex<T>::load(uint32_t num_threads, const char *index_prefix, std::string &local_index_dir) {
 #endif
     std::string pq_table_bin = std::string(index_prefix) + "_pq_pivots.bin";
     std::string pq_compressed_vectors =
@@ -551,7 +551,7 @@ namespace diskann {
     get_bin_metadata(files, pq_table_bin, pq_file_num_centroids, pq_file_dim,
                      METADATA_SIZE);
 #else
-    get_bin_metadata(pq_table_bin, pq_file_num_centroids, pq_file_dim,
+    get_bin_metadata(local_index_dir + pq_table_bin, pq_file_num_centroids, pq_file_dim,
                      METADATA_SIZE);
 #endif
 
@@ -576,7 +576,7 @@ namespace diskann {
     diskann::load_bin<_u8>(files, pq_compressed_vectors, this->data, npts_u64,
                            nchunks_u64);
 #else
-    diskann::load_bin<_u8>(pq_compressed_vectors, this->data, npts_u64,
+    diskann::load_bin<_u8>(local_index_dir + pq_compressed_vectors, this->data, npts_u64,
                            nchunks_u64);
 #endif
 
@@ -586,7 +586,7 @@ namespace diskann {
 #ifdef EXEC_ENV_OLS
     pq_table.load_pq_centroid_bin(files, pq_table_bin.c_str(), nchunks_u64);
 #else
-    pq_table.load_pq_centroid_bin(pq_table_bin.c_str(), nchunks_u64);
+    pq_table.load_pq_centroid_bin((local_index_dir + pq_table_bin).c_str(), nchunks_u64);
 #endif
 
     diskann::cout
@@ -604,7 +604,7 @@ namespace diskann {
                                   __LINE__);
     }
 
-    std::string disk_pq_pivots_path = this->disk_index_file + "_pq_pivots.bin";
+    std::string disk_pq_pivots_path = local_index_dir + this->disk_index_file + "_pq_pivots.bin";
     if (file_exists(disk_pq_pivots_path)) {
       use_disk_index_pq = true;
 #ifdef EXEC_ENV_OLS
@@ -639,7 +639,7 @@ namespace diskann {
     ContentBuf               buf(bytes, HEADER_SIZE);
     std::basic_istream<char> index_metadata(&buf);
 #else
-    std::ifstream index_metadata(disk_index_file, std::ios::binary);
+    std::ifstream index_metadata(local_index_dir + disk_index_file, std::ios::binary);
 #endif
 
     _u32 nr, nc;  // metadata itself is stored as bin format (nr is number of

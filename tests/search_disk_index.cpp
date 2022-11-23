@@ -24,7 +24,12 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef JNI
+#include <jni.h>
+#include "jni/blob_file_reader.h"
+#else
 #include "linux_aligned_file_reader.h"
+#endif
 #else
 #ifdef USE_BING_INFRA
 #include "bing_aligned_file_reader.h"
@@ -99,13 +104,36 @@ int search_disk_index(
   reader.reset(new diskann::BingAlignedFileReader());
 #endif
 #else
+#ifdef JNI
+  JavaVM *jvm;
+  JNIEnv *env;
+  std::string indexServerJarPath = "/home/jlembicz/LuceneIndexServer/build/libs/serverlessserver-1.0-SNAPSHOT.jar";
+  if (!BlobFileReader::InitializeJVM(&jvm, &env, indexServerJarPath)) {
+    std::cerr << "Something went wrong creating the JavaVM for DiskANN!" << std::endl;
+    return 0;
+  }
+  std::cout << "Created JVM" << std::endl; 
+  std::string storageAccount = "jldiskanntest"; 
+  std::string blobContainerName = "diskann";
+  std::string cacheDir = "/home/jlembicz/github/diskann/localcache";
+  long cacheSizeBytes = 1024*1024*1024;
+  int fragmentSize = 4*1024*1024;
+  BlobFileReader* fileReader = new BlobFileReader(*env, storageAccount, blobContainerName, cacheDir, cacheSizeBytes, fragmentSize);
+  reader.reset(fileReader);
+  diskann::cout << "Blob reader created." << std::endl;
+  // TODO: remove hack, all files should be read using AlignedFileReader
+  std::string local_index_dir = "data/sift_new/";
+#else
+  std::string local_index_dir = "";
   reader.reset(new LinuxAlignedFileReader());
+#endif
 #endif
 
   std::unique_ptr<diskann::PQFlashIndex<T>> _pFlashIndex(
       new diskann::PQFlashIndex<T>(reader, metric));
 
-  int res = _pFlashIndex->load(num_threads, index_path_prefix.c_str());
+  
+  int res = _pFlashIndex->load(num_threads, index_path_prefix.c_str(), local_index_dir);
 
   if (res != 0) {
     return res;
@@ -169,15 +197,16 @@ int search_disk_index(
   std::string recall_string = "Recall@" + std::to_string(recall_at);
   diskann::cout << std::setw(6) << "L" << std::setw(12) << "Beamwidth"
                 << std::setw(16) << "QPS" << std::setw(16) << "Mean Latency"
-                << std::setw(16) << "99.9 Latency" << std::setw(16)
-                << "Mean IOs" << std::setw(16) << "CPU (s)";
+                << std::setw(16) << "99.9 Latency" << std::setw(16) << "Mean IOs"
+                << std::setw(16) << "CPU (s)" << std::setw(16) << "Mean cmps"
+                << std::setw(16) << "Mean hops"  << std::setw(16) << "Mean cache hits";
   if (calc_recall_flag) {
     diskann::cout << std::setw(16) << recall_string << std::endl;
   } else
     diskann::cout << std::endl;
   diskann::cout
       << "==============================================================="
-         "======================================================="
+         "============================================================================================"
       << std::endl;
 
   std::vector<std::vector<uint32_t>> query_result_ids(Lvec.size());
@@ -226,6 +255,15 @@ int search_disk_index(
                                                query_result_ids[test_id].data(),
                                                query_num, recall_at);
 
+    auto mean_cmps = diskann::get_mean_stats<float>(stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.n_cmps; });
+
+    auto mean_hops = diskann::get_mean_stats<float>(stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.n_hops; });
+
+    auto mean_cache_hits = diskann::get_mean_stats<float>(stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.n_cache_hits; });
+
     auto mean_latency = diskann::get_mean_stats<float>(
         stats, query_num,
         [](const diskann::QueryStats& stats) { return stats.total_us; });
@@ -252,7 +290,9 @@ int search_disk_index(
     diskann::cout << std::setw(6) << L << std::setw(12) << optimized_beamwidth
                   << std::setw(16) << qps << std::setw(16) << mean_latency
                   << std::setw(16) << latency_999 << std::setw(16) << mean_ios
-                  << std::setw(16) << mean_cpuus;
+                  << std::setw(16) << mean_cpuus << std::setw(16) << mean_cmps 
+                  << std::setw(16) << mean_hops  << std::setw(16) << mean_cache_hits; 
+
     if (calc_recall_flag) {
       diskann::cout << std::setw(16) << recall << std::endl;
     } else
@@ -281,6 +321,12 @@ int search_disk_index(
   diskann::aligned_free(query);
   if (warmup != nullptr)
     diskann::aligned_free(warmup);
+
+  #ifdef JNI
+    delete fileReader;
+    diskann::cout << "Destroing Java JVM" << std::endl;
+    jvm->DestroyJavaVM();
+  #endif
   return 0;
 }
 

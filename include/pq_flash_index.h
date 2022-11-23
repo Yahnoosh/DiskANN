@@ -77,7 +77,7 @@ namespace diskann {
                                uint32_t num_threads, const char *index_prefix);
 #else
     // load compressed data, and obtains the handle to the disk-resident index
-    DISKANN_DLLEXPORT int  load(uint32_t num_threads, const char *index_prefix);
+    DISKANN_DLLEXPORT int  load(uint32_t num_threads, const char *index_prefix, std::string &local_index_dir);
 #endif
 
     DISKANN_DLLEXPORT void load_cache_list(std::vector<uint32_t> &node_list);

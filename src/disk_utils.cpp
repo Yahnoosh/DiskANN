@@ -929,7 +929,7 @@ namespace diskann {
         num_pq_chunks > MAX_PQ_CHUNKS ? MAX_PQ_CHUNKS : num_pq_chunks;
 
     diskann::cout << "Compressing " << dim << "-dimensional data into "
-                  << num_pq_chunks << " bytes per vector." << std::endl;
+                  << num_pq_chunks << " bytes per vector. Number of vectors " << points_num << std::endl;
 
     size_t train_size, train_dim;
     float *train_data;
